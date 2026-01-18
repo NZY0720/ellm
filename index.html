@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VPP 年度数据 Dashboard</title>
+    <link rel="stylesheet" href="./assets/style.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script defer src="./assets/dashboard.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__left">
+        <div class="brand">VPP 年度数据 Dashboard</div>
+        <div class="subtitle">
+          数据源：<code>data/VPP一年优化数据.csv</code>
+          <span class="subtitle__sep">·</span>
+          最后更新：<span id="last-updated">-</span>
+        </div>
+      </div>
+      <div class="topbar__right">
+        <a class="link" href="./README.md" target="_blank" rel="noreferrer">使用说明</a>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel panel--dashboard">
+        <div class="section">
+          <div class="section__title">筛选与概览</div>
+          <div class="controls">
+            <div class="control">
+              <label for="start">起始 Datetime</label>
+              <input id="start" type="text" placeholder="YYYY/M/D H:mm" />
+            </div>
+            <div class="control">
+              <label for="end">结束 Datetime</label>
+              <input id="end" type="text" placeholder="YYYY/M/D H:mm" />
+            </div>
+            <div class="control">
+              <label for="metric">主图指标</label>
+              <select id="metric"></select>
+            </div>
+            <div class="control control--buttons">
+              <button id="apply" class="btn btn--primary">应用筛选</button>
+              <button id="reset" class="btn">重置</button>
+              <button id="download" class="btn">导出筛选结果 CSV</button>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpi__label">行数（筛选后）</div>
+              <div class="kpi__value" id="kpi-rows">-</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">Load_MW（均值/峰值）</div>
+              <div class="kpi__value" id="kpi-load">-</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">Wind_MW（均值/峰值）</div>
+              <div class="kpi__value" id="kpi-wind">-</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">PV_MW（均值/峰值）</div>
+              <div class="kpi__value" id="kpi-pv">-</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">Gas_MW（均值/峰值）</div>
+              <div class="kpi__value" id="kpi-gas">-</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">ES_SOC_MWh（最小/最大）</div>
+              <div class="kpi__value" id="kpi-soc">-</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="card__title">主图</div>
+            <div class="chart" id="chart-main"></div>
+          </div>
+
+          <div class="card">
+            <div class="card__title">出力与储能功率（MW）</div>
+            <div class="chart" id="chart-mix"></div>
+          </div>
+
+          <div class="card card--full">
+          <div class="card__title">储能规划 SOC（MWh）</div>
+            <div class="chart" id="chart-soc"></div>
+          </div>
+
+          <div class="card card--full">
+            <div class="card__header">
+              <div class="card__title">预测结果（24h）</div>
+              <div class="card__tools">
+                <label for="forecast-type">展示</label>
+                <select id="forecast-type"></select>
+              </div>
+            </div>
+            <div class="chart" id="chart-forecast"></div>
+            <div class="forecast__hint" id="forecast-hint">-</div>
+          </div>
+
+          <div class="card card--full">
+            <div class="card__title">数据预览（前 200 行）</div>
+            <div class="table-wrap">
+              <table class="table" id="table"></table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel panel--assistant">
+        <div class="assistant__title">E-Agent</div>
+        <div class="assistant__panel">
+          <div class="assistant__messages" id="assistant-messages"></div>
+          <div class="assistant__controls">
+              <div class="assistant__mode">
+                <label for="assistant-mode">模式</label>
+                <select id="assistant-mode">
+                  <option value="chat">Chat</option>
+                  <option value="agent">Agent</option>
+                </select>
+              </div>
+            <textarea
+              id="assistant-input"
+              placeholder="输入问题，回车发送；Shift+回车换行"
+              rows="3"
+            ></textarea>
+            <div class="assistant__actions">
+              <button id="assistant-send" class="btn btn--primary">发送</button>
+              <button id="assistant-clear" class="btn">清空</button>
+            </div>
+            <div class="assistant__files">
+              <div class="assistant__file-row">
+                <label for="assistant-file">上传文件</label>
+                <input id="assistant-file" type="file" multiple />
+              </div>
+              <div class="assistant__file-row assistant__file-row--path">
+                <label for="assistant-path">读取 data/ 路径</label>
+                <div class="assistant__file-path">
+                  <input id="assistant-path" type="text" value="data/VPP一年优化数据.csv" />
+                  <button id="assistant-load" class="btn">读取</button>
+                </div>
+              </div>
+              <div class="assistant__file-row assistant__file-row--fixed">
+                <label for="assistant-target">固定写入目标</label>
+                <div class="assistant__file-target">
+                  <select id="assistant-target"></select>
+                  <button id="assistant-write-target" class="btn">写入所选文件</button>
+                </div>
+              </div>
+              <div class="assistant__file-list" id="assistant-files"></div>
+              <div class="assistant__file-hint" id="assistant-file-hint">仅允许读取 data/ 目录下的文件。</div>
+            </div>
+            <div class="assistant__status" id="assistant-status">未连接</div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div>
+        提示：本页面需要通过静态服务器访问（不要直接双击打开），否则浏览器可能阻止读取 CSV。
+      </div>
+    </footer>
+  </body>
+</html>
+
+

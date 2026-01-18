@@ -1,0 +1,114 @@
+[2026-01-18 15:48:23.612] Root=D:\DeskFiles\LLM_project\frontend Port=5173
+[2026-01-18 15:48:23.694] Listening(HttpListener)=http://localhost:5173/
+[2026-01-18 15:48:36.010] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:36.023] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:36.024] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:36.026] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:38.775] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:38.778] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:38.814] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:48:38.818] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 System.Management.Automation.Interpreter.ActionCallInstruction`2.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+   在 System.Management.Automation.Interpreter.EnterTryCatchFinallyInstruction.Run(InterpretedFrame frame)
+[2026-01-18 15:49:38.779] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:49:38.781] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:49:38.783] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:49:38.784] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:50:38.832] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:50:38.833] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:50:38.836] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
+[2026-01-18 15:50:38.838] Request error(HttpListener): System.Management.Automation.MethodInvocationException: 使用“3”个参数调用“Write”时发生异常:“写入流的字节超出指定的 Content-Length 字节大小。” ---> System.Net.ProtocolViolationException: 写入流的字节超出指定的 Content-Length 字节大小。
+   在 System.Net.HttpResponseStream.Write(Byte[] buffer, Int32 offset, Int32 size)
+   在 CallSite.Target(Closure , CallSite , Object , Object , Int32 , Object )
+   --- 内部异常堆栈跟踪的结尾 ---
+   在 System.Management.Automation.ExceptionHandlingOps.CheckActionPreference(FunctionContext funcContext, Exception exception)
+   在 lambda_method(Closure , Object[] , StrongBox`1[] , InterpretedFrame )
