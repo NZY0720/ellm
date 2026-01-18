@@ -1,3 +1,4 @@
 # 忽略 predict 目录下的 env 文件夹
 predict/env/
 
+llm/key.txt
