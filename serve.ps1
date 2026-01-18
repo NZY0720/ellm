@@ -129,12 +129,18 @@ if (-not $NoAgent) {
     Write-Host ""
     Write-Host "Starting DeepSeek agent..."
     $agentLog = Join-Path -Path $rootDir -ChildPath "llm\agent.log"
-    $pyCmd = Get-Command "py" -ErrorAction SilentlyContinue
-    if ($null -eq $pyCmd) {
-      throw "Python launcher 'py' not found. Install Python or add it to PATH."
-    }
     $agentArgs = ".\llm\main.py --server --host 127.0.0.1 --port 8000"
-    $agentProcess = Start-Process -FilePath "py" -ArgumentList $agentArgs -WorkingDirectory $rootDir -PassThru -RedirectStandardOutput $agentLog -RedirectStandardError $agentLog
+    $venvPy = Join-Path -Path $rootDir -ChildPath ".venv\Scripts\python.exe"
+    if (Test-Path -LiteralPath $venvPy -PathType Leaf) {
+      # Prefer local venv if present
+      $agentProcess = Start-Process -FilePath $venvPy -ArgumentList $agentArgs -WorkingDirectory $rootDir -PassThru -RedirectStandardOutput $agentLog -RedirectStandardError $agentLog
+    } else {
+      $pyCmd = Get-Command "py" -ErrorAction SilentlyContinue
+      if ($null -eq $pyCmd) {
+        throw "Python not found. Install Python (recommended) or create .venv in the project root."
+      }
+      $agentProcess = Start-Process -FilePath "py" -ArgumentList $agentArgs -WorkingDirectory $rootDir -PassThru -RedirectStandardOutput $agentLog -RedirectStandardError $agentLog
+    }
     Write-Host ("Agent PID: " + $agentProcess.Id)
     Write-Host ("Agent Log: " + $agentLog)
   } catch {
