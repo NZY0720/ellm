@@ -3,6 +3,8 @@
 const DATA_ROOT = 'data';
 const CSV_FILE = `${DATA_ROOT}/虚拟电厂_24h15min_数据.csv`;
 const REFRESH_MS = 60 * 1000;
+const SIM_STATUS_FILE = `${DATA_ROOT}/output/realtime_sim_status.json`;
+const SIM_WATCH_MS = 5000;
 
 const METRICS = [
   { key: '负荷消耗_kW', label: '负荷（kW）' },
@@ -102,7 +104,7 @@ function downloadText(filename, text) {
 function parseDatetime(text) {
   if (!text) return NaN;
   const s = String(text).trim();
-  // Numeric hours like "6" / "6.25" (for 15min data)
+  // Numeric hours like "6" / "6.25" / "120.5" for cumulative-hour data.
   if (/^\d+(\.\d+)?$/.test(s)) {
     const hours = Number(s);
     if (!Number.isFinite(hours)) return NaN;
@@ -131,17 +133,17 @@ function parseDatetime(text) {
 function formatDatetime(dt) {
   const ms = dt instanceof Date ? dt.getTime() : Number(dt);
   if (!Number.isFinite(ms)) return '';
-  // If it's a small synthetic range (<= 48h), render as H:MM.
-  if (ms >= 0 && ms <= 48 * 60 * 60 * 1000) {
-    const totalMin = Math.round(ms / 60000);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    const pad2 = (n) => String(n).padStart(2, '0');
-    return `${h}:${pad2(m)}`;
-  }
   const d = new Date(ms);
   const pad2 = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${pad2(d.getMinutes())}`;
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function compactDatetimeLabel(text) {
+  const ms = parseDatetime(text);
+  if (!Number.isFinite(ms)) return String(text);
+  const d = new Date(ms);
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 function guessTimeRange(rows) {
@@ -227,7 +229,10 @@ function baseChartOption(title, x) {
     xAxis: {
       type: 'category',
       data: x,
-      axisLabel: { color: 'rgba(255,255,255,0.62)' },
+      axisLabel: {
+        color: 'rgba(255,255,255,0.62)',
+        formatter: (value) => compactDatetimeLabel(value),
+      },
       axisLine: { lineStyle: { color: 'rgba(255,255,255,0.22)' } },
     },
     yAxis: {
@@ -277,6 +282,17 @@ async function loadCsv(file = CSV_FILE) {
     console.warn('CSV 解析警告：', parsed.errors);
   }
   return parsed.data;
+}
+
+async function loadJsonOptional(file) {
+  try {
+    const url = encodeURI(`./${file}`);
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
 }
 
 async function loadCsvOptional(file) {
@@ -458,299 +474,10 @@ function attachResize(charts) {
   });
 }
 
-function initAssistant() {
-  const messagesEl = $('assistant-messages');
-  const inputEl = $('assistant-input');
-  const sendEl = $('assistant-send');
-  const clearEl = $('assistant-clear');
-  const statusEl = $('assistant-status');
-  const modeEl = $('assistant-mode');
-  const fileEl = $('assistant-file');
-  const pathEl = $('assistant-path');
-  const loadEl = $('assistant-load');
-  const targetEl = $('assistant-target');
-  const writeTargetEl = $('assistant-write-target');
-  const filesEl = $('assistant-files');
-  const fileHintEl = $('assistant-file-hint');
-  if (!messagesEl || !inputEl || !sendEl || !clearEl || !statusEl || !modeEl || !fileEl || !pathEl || !loadEl || !targetEl || !writeTargetEl || !filesEl || !fileHintEl) return;
-
-  const history = [
-    { role: 'system', content: '你是一个简洁、专注于数据分析的助手。' },
-  ];
-  const attachments = [];
-
-  function setStatus(text) {
-    statusEl.textContent = text;
-  }
-
-  function addBubble(role, text) {
-    const div = document.createElement('div');
-    div.className = `assistant__bubble assistant__bubble--${role}`;
-    div.textContent = text;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function formatBytes(bytes) {
-    if (!Number.isFinite(bytes)) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    const mb = kb / 1024;
-    return `${mb.toFixed(2)} MB`;
-  }
-
-  function setFileHint(text, isError = false) {
-    fileHintEl.textContent = text;
-    fileHintEl.style.color = isError ? 'var(--bad)' : 'var(--muted)';
-  }
-
-  function renderFileList() {
-    if (attachments.length === 0) {
-      filesEl.innerHTML = '<div class="assistant__file-sub">未加载文件。</div>';
-      return;
-    }
-    filesEl.innerHTML = '';
-    for (const item of attachments) {
-      const row = document.createElement('div');
-      row.className = 'assistant__file-item';
-      const meta = document.createElement('div');
-      meta.className = 'assistant__file-meta';
-      const name = document.createElement('div');
-      name.className = 'assistant__file-name';
-      name.textContent = item.name;
-      const sub = document.createElement('div');
-      sub.className = 'assistant__file-sub';
-      sub.textContent = `${item.source} · ${formatBytes(item.size)}${item.truncated ? ' · 已截断' : ''}`;
-      meta.appendChild(name);
-      meta.appendChild(sub);
-      const btn = document.createElement('button');
-      btn.className = 'btn';
-      btn.textContent = '移除';
-      btn.addEventListener('click', () => {
-        const idx = attachments.findIndex((a) => a.id === item.id);
-        if (idx >= 0) attachments.splice(idx, 1);
-        renderFileList();
-        setFileHint('已更新文件列表。');
-      });
-      row.appendChild(meta);
-      row.appendChild(btn);
-      filesEl.appendChild(row);
-    }
-  }
-
-  function truncateText(text) {
-    if (text.length <= MAX_FILE_CHARS) return { text, truncated: false };
-    return {
-      text: `${text.slice(0, MAX_FILE_CHARS)}\n\n[内容已截断，超过 ${MAX_FILE_CHARS} 字符]`,
-      truncated: true,
-    };
-  }
-
-  function addAttachment(payload) {
-    attachments.push(payload);
-    renderFileList();
-  }
-
-  function buildAttachmentContext() {
-    if (attachments.length === 0) return '';
-    return attachments.map((a, index) => {
-      return [
-        `【文件${index + 1}】${a.name}`,
-        `来源：${a.source}`,
-        `大小：${formatBytes(a.size)}${a.truncated ? '（已截断）' : ''}`,
-        '内容：',
-        a.text,
-      ].join('\n');
-    }).join('\n\n');
-  }
-
-  async function readFileAsText(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ''));
-      reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'));
-      reader.readAsText(file);
-    });
-  }
-
-  async function sendMessage(forcedPath = '') {
-    const content = inputEl.value.trim();
-    if (!content) return;
-    inputEl.value = '';
-    addBubble('user', content);
-    setStatus('请求中...');
-    sendEl.disabled = true;
-
-    try {
-      const mode = modeEl.value === 'agent' ? 'agent' : 'chat';
-      const endpoint = mode === 'agent' ? ASSISTANT_AGENT : ASSISTANT_API;
-      const attachmentContext = buildAttachmentContext();
-      const payloadMessages = [...history];
-      if (attachmentContext) {
-        payloadMessages.push({
-          role: 'system',
-          content: `以下是用户已上传/读取的文件内容，仅供回答问题使用：\n\n${attachmentContext}`,
-        });
-      }
-      if (mode === 'agent' && forcedPath) {
-        payloadMessages.push({
-          role: 'system',
-          content: (
-            '请将最终结果写入固定目标文件，并严格使用以下文件块格式输出：\n' +
-            `\`\`\`file:${forcedPath}\n` +
-            'CSV内容\n' +
-            '```\n'
-          ),
-        });
-      }
-      payloadMessages.push({ role: 'user', content });
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: payloadMessages,
-          temperature: 0.7,
-          max_tokens: 512,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
-      }
-      const data = await res.json();
-      const reply = data.text || '(无返回)';
-      history.push({ role: 'user', content });
-      history.push({ role: 'assistant', content: reply });
-      addBubble('assistant', reply);
-      if (mode === 'agent') {
-        if (data.saved && data.filename) {
-          addBubble('assistant', `已写入文件：${data.filename}`);
-        } else if (data.error) {
-          addBubble('assistant', `写入失败：${data.error}`);
-        } else {
-          addBubble('assistant', '未检测到可写入的文件块。');
-        }
-      }
-      setStatus('已连接');
-    } catch (err) {
-      const msg = (err && err.message) ? err.message : String(err);
-      const hint = msg.includes('Failed to fetch')
-        ? '（请确认本地 Agent 已启动，且 8000 端口可用）'
-        : '';
-      addBubble('assistant', `请求失败：${msg} ${hint}`.trim());
-      setStatus('连接失败');
-    } finally {
-      sendEl.disabled = false;
-    }
-  }
-
-  sendEl.addEventListener('click', sendMessage);
-  inputEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-  clearEl.addEventListener('click', () => {
-    messagesEl.innerHTML = '';
-    history.length = 0;
-    history.push({ role: 'system', content: '你是一个简洁、专注于数据分析的助手。' });
-    attachments.length = 0;
-    renderFileList();
-    setStatus('未连接');
-    setFileHint('已清空对话与文件。');
-  });
-
-  async function checkHealth() {
-    try {
-      const res = await fetch(ASSISTANT_HEALTH, { cache: 'no-store' });
-      if (res.ok) {
-        setStatus('已连接');
-        return true;
-      }
-    } catch (e) {
-      // ignore
-    }
-    setStatus('未连接');
-    return false;
-  }
-
-  addBubble('assistant', '你好，我是本地 DeepSeek 助手，可以帮你分析当前页面数据。');
-  checkHealth();
-  renderFileList();
-  targetEl.innerHTML = AGENT_TARGETS.map((t) => `<option value="${t.value}">${t.label}</option>`).join('');
-
-  fileEl.addEventListener('change', async () => {
-    const files = Array.from(fileEl.files || []);
-    if (files.length === 0) return;
-    setFileHint('正在读取上传文件...');
-    for (const file of files) {
-      try {
-        const rawText = await readFileAsText(file);
-        const { text, truncated } = truncateText(rawText);
-        addAttachment({
-          id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-          name: file.name,
-          source: '本地上传',
-          size: file.size,
-          text,
-          truncated,
-        });
-        setFileHint(`已读取：${file.name}`);
-      } catch (e) {
-        setFileHint(`读取失败：${file.name}`, true);
-      }
-    }
-    fileEl.value = '';
-  });
-
-  loadEl.addEventListener('click', async () => {
-    const path = String(pathEl.value || '').trim();
-    if (!path) {
-      setFileHint('请输入 data/ 下的文件路径。', true);
-      return;
-    }
-    const normalized = path.replace(/\\/g, '/');
-    if (!normalized.startsWith('data/') || normalized.includes('..')) {
-      setFileHint('路径必须以 data/ 开头，且不能包含 ..', true);
-      return;
-    }
-    setFileHint(`正在读取：${normalized}`);
-    try {
-      const res = await fetch(encodeURI(`./${normalized}`), { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-      const rawText = await res.text();
-      const { text, truncated } = truncateText(rawText);
-      addAttachment({
-        id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-        name: normalized.split('/').pop() || normalized,
-        source: normalized,
-        size: rawText.length,
-        text,
-        truncated,
-      });
-      setFileHint(`已读取：${normalized}`);
-    } catch (e) {
-      const msg = (e && e.message) ? e.message : String(e);
-      setFileHint(`读取失败：${msg}`, true);
-    }
-  });
-
-  writeTargetEl.addEventListener('click', async () => {
-    modeEl.value = 'agent';
-    if (!inputEl.value.trim()) {
-      setFileHint('请先输入要生成/修正的内容，再使用固定写入。', true);
-      return;
-    }
-    const target = String(targetEl.value || '').trim();
-    if (!target) {
-      setFileHint('请选择一个写入目标文件。', true);
-      return;
-    }
-    setFileHint(`已启用固定目标文件写入：${target}`);
-    await sendMessage(target);
-  });
+function initAssistant(bridge) {
+  if (!window.AssistantRuntime || typeof window.AssistantRuntime.createRuntime !== 'function') return null;
+  window.DashboardAssistantBridge = bridge;
+  return window.AssistantRuntime.createRuntime({ bridge });
 }
 
 async function main() {
@@ -760,25 +487,22 @@ async function main() {
   }
 
   function normalize(rawRows) {
-    // New data source (24h, 15min): build a time axis from 时间_小时 / 时间_时段
-    const pad2 = (n) => String(n).padStart(2, '0');
-    const fmtHM = (hours) => {
-      const h = Math.floor(hours);
-      const minutes = Math.round((hours - h) * 60);
-      const mm = Math.max(0, Math.min(59, minutes));
-      return `${h}:${pad2(mm)}`;
-    };
-
     return rawRows.map((r) => {
+      const dtText = String(r.Datetime ?? '').trim();
+      const directTs = parseDatetime(dtText);
       const hour = Number(r['时间_小时']);
       const period = Number(r['时间_时段']);
-      const hours = Number.isFinite(hour)
+      const fallbackHours = Number.isFinite(hour)
         ? hour
-        : (Number.isFinite(period) ? (period - 1) * 0.25 : NaN);
-      const label = Number.isFinite(hours) ? fmtHM(hours) : '';
+        : (Number.isFinite(period) ? (period - 1) / 60 : NaN);
+      const fallbackTs = Number.isFinite(fallbackHours) ? fallbackHours * 60 * 60 * 1000 : NaN;
+      const ts = Number.isFinite(directTs) ? directTs : fallbackTs;
+      const label = Number.isFinite(directTs)
+        ? formatDatetime(directTs)
+        : (Number.isFinite(fallbackTs) ? formatDatetime(fallbackTs) : '');
       return {
         Datetime: label || String(r.Datetime ?? ''),
-        _ts: Number.isFinite(hours) ? hours * 60 * 60 * 1000 : parseDatetime(label),
+        _ts: ts,
         '时间_小时': r['时间_小时'],
         '时间_时段': r['时间_时段'],
         '负荷消耗_kW': r['负荷消耗_kW'],
@@ -832,13 +556,69 @@ async function main() {
 
   const columns = ['Datetime', '时间_小时', '时间_时段', '负荷消耗_kW', '光伏出力_kW', '实时电价_元/kWh'];
   const tableEl = $('table');
+  const dashboardState = {
+    dataset: {
+      totalRows: rows.length,
+      filteredRows: 0,
+    },
+    filters: {
+      start: '',
+      end: '',
+      metric: '',
+      metricLabel: '',
+    },
+    kpis: {
+      load: null,
+      pv: null,
+      price: null,
+    },
+    forecast: {
+      key: forecastEl.value,
+      ready: false,
+      hint: '',
+      rows: 0,
+      agentRows: 0,
+    },
+    decision: {
+      ready: false,
+      hint: '',
+      rows: 0,
+    },
+    updatedAt: Date.now(),
+  };
+
+  function publishDashboardState() {
+    dashboardState.updatedAt = Date.now();
+    window.__dashboardState = JSON.parse(JSON.stringify(dashboardState));
+    window.dispatchEvent(new CustomEvent('dashboard:state', {
+      detail: window.__dashboardState,
+    }));
+  }
 
   function render() {
     const filtered = pickRowsByTime(rows, startEl.value, endEl.value);
+    const load = stat(filtered.map((r) => Number(r['负荷消耗_kW'])));
+    const pv = stat(filtered.map((r) => Number(r['光伏出力_kW'])));
+    const price = stat(filtered.map((r) => Number(r['实时电价_元/kWh'])));
+    const metricLabel = (METRICS.find((m) => m.key === metricEl.value)?.label) ?? metricEl.value;
     setKpis(filtered);
     renderMainChart(chartMain, filtered, metricEl.value);
     renderMixChart(chartMix, filtered);
     buildTable(tableEl, columns, filtered, 200);
+    dashboardState.dataset.totalRows = rows.length;
+    dashboardState.dataset.filteredRows = filtered.length;
+    dashboardState.filters = {
+      start: startEl.value,
+      end: endEl.value,
+      metric: metricEl.value,
+      metricLabel,
+    };
+    dashboardState.kpis = {
+      load,
+      pv,
+      price,
+    };
+    publishDashboardState();
   }
 
   applyEl.addEventListener('click', render);
@@ -864,6 +644,7 @@ async function main() {
     forecastRefreshing = true;
     const config = getForecastConfig(forecastEl.value);
     setForecastHint(`数据源：${config.file}（加载中...）`);
+    dashboardState.forecast.key = config.key;
     try {
       const [rawRows, rawAgentRows] = await Promise.all([
         loadCsv(config.file),
@@ -874,6 +655,10 @@ async function main() {
       renderForecastChart(chartForecast, forecastRows, forecastAgentRows, config);
       const agentHint = forecastAgentRows.length ? ` + Agent ${forecastAgentRows.length} 行` : '';
       setForecastHint(`数据源：${config.file}${agentHint}`);
+      dashboardState.forecast.ready = true;
+      dashboardState.forecast.hint = `数据源：${config.file}${agentHint}`;
+      dashboardState.forecast.rows = forecastRows.length;
+      dashboardState.forecast.agentRows = forecastAgentRows.length;
     } catch (e) {
       console.warn('读取预测数据失败：', e);
       const msg = (e && e.message) ? e.message : String(e);
@@ -883,8 +668,15 @@ async function main() {
         : `读取预测数据失败：${msg}`
       );
       renderForecastChart(chartForecast, [], [], config);
+      dashboardState.forecast.ready = false;
+      dashboardState.forecast.hint = missing
+        ? `暂无预测文件：${config.file}。点击“运行预测”生成一次 12h 预测。`
+        : `读取预测数据失败：${msg}`;
+      dashboardState.forecast.rows = 0;
+      dashboardState.forecast.agentRows = 0;
     } finally {
       forecastRefreshing = false;
+      publishDashboardState();
     }
   }
 
@@ -902,7 +694,7 @@ async function main() {
           history_file: '虚拟电厂_24h15min_数据.csv',
           window_hours: 24,
           horizon_hours: 12,
-          step_minutes: 15,
+          step_minutes: 1,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -931,6 +723,9 @@ async function main() {
       const raw = await loadCsv(file);
       renderDecisionChart(chartDecision, raw);
       setDecisionHint(`数据源：${file}（${raw.length} 行）`);
+      dashboardState.decision.ready = true;
+      dashboardState.decision.hint = `数据源：${file}（${raw.length} 行）`;
+      dashboardState.decision.rows = raw.length;
     } catch (e) {
       const msg = (e && e.message) ? e.message : String(e);
       const missing = /404/.test(msg) || /Not Found/i.test(msg);
@@ -939,8 +734,14 @@ async function main() {
         : `读取决策数据失败：${msg}`
       );
       renderDecisionChart(chartDecision, []);
+      dashboardState.decision.ready = false;
+      dashboardState.decision.hint = missing
+        ? `暂无决策文件：${file}。先点击“运行预测”，再点击“生成决策”。`
+        : `读取决策数据失败：${msg}`;
+      dashboardState.decision.rows = 0;
     } finally {
       decisionRefreshing = false;
+      publishDashboardState();
     }
   }
 
@@ -960,7 +761,7 @@ async function main() {
           pv_forecast: 'output/PV_forecast_12h.csv',
           output_file: 'output/Market_decision_12h.csv',
           horizon_hours: 12,
-          step_minutes: 15,
+          step_minutes: 1,
           window_hours: 24,
           capacity_kwh: 200,
           p_max_kw: 100,
@@ -1029,7 +830,41 @@ async function main() {
     refreshDecision();
   }, REFRESH_MS);
 
-  initAssistant();
+  let simRevision = null;
+  let simWatching = false;
+  async function watchSimulatorStatus() {
+    if (simWatching) return;
+    simWatching = true;
+    try {
+      const status = await loadJsonOptional(SIM_STATUS_FILE);
+      if (!status || status.kind !== 'realtime-simulator') return;
+      if (simRevision == null) {
+        simRevision = status.revision;
+        return;
+      }
+      if (status.revision !== simRevision) {
+        simRevision = status.revision;
+        await refreshData();
+        await refreshForecast();
+        await refreshDecision();
+      }
+    } finally {
+      simWatching = false;
+    }
+  }
+
+  setInterval(() => {
+    watchSimulatorStatus();
+  }, SIM_WATCH_MS);
+
+  const assistantBridge = {
+    getSnapshot: () => window.__dashboardState || JSON.parse(JSON.stringify(dashboardState)),
+    refreshData,
+    refreshDecision,
+    refreshForecast,
+  };
+  publishDashboardState();
+  initAssistant(assistantBridge);
 }
 
 window.addEventListener('DOMContentLoaded', () => {

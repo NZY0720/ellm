@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="./assets/style.css" />
     <script defer src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+    <script defer src="./assets/assistant-state.js"></script>
+    <script defer src="./assets/assistant-tools.js"></script>
+    <script defer src="./assets/assistant-ui.js"></script>
+    <script defer src="./assets/assistant-runtime.js"></script>
     <script defer src="./assets/dashboard.js"></script>
   </head>
   <body>
@@ -31,11 +35,11 @@
           <div class="controls">
             <div class="control">
               <label for="start">起始 时间</label>
-              <input id="start" type="text" placeholder="H:MM（例如 6:00）或 小时数（例如 6.0）" />
+              <input id="start" type="text" placeholder="YYYY/MM/DD HH:MM（例如 2026/03/16 08:00）" />
             </div>
             <div class="control">
               <label for="end">结束 时间</label>
-              <input id="end" type="text" placeholder="H:MM（例如 18:00）或 小时数（例如 18.0）" />
+              <input id="end" type="text" placeholder="YYYY/MM/DD HH:MM（例如 2026/03/16 20:00）" />
             </div>
             <div class="control">
               <label for="metric">主图指标</label>
@@ -115,18 +119,48 @@
       <aside class="panel panel--assistant">
         <div class="assistant__title">E-Agent</div>
         <div class="assistant__panel">
-          <div class="assistant__messages" id="assistant-messages"></div>
+          <div class="assistant__toolbar">
+            <div class="assistant__mode">
+              <label for="assistant-mode">模式</label>
+              <select id="assistant-mode">
+                <option value="chat">Chat</option>
+                <option value="agent" selected>Agent</option>
+              </select>
+            </div>
+            <div class="assistant__mode">
+              <label for="assistant-autonomy">自治级别</label>
+              <select id="assistant-autonomy">
+                <option value="suggest_only">只给建议</option>
+                <option value="confirm_first">执行前确认</option>
+                <option value="auto_safe" selected>自动执行安全动作</option>
+              </select>
+            </div>
+            <button id="assistant-cancel-task" class="btn">中断执行</button>
+          </div>
+          <div class="assistant__approval" id="assistant-approval" hidden>
+            <div class="assistant__approval-title">待确认动作</div>
+            <div class="assistant__approval-text" id="assistant-approval-text"></div>
+            <div class="assistant__approval-actions">
+              <button id="assistant-approve" class="btn btn--primary">批准执行</button>
+              <button id="assistant-reject" class="btn">拒绝</button>
+            </div>
+          </div>
+          <div class="assistant__section">
+            <div class="assistant__section-title">建议</div>
+            <div class="assistant__suggestions" id="assistant-suggestions"></div>
+          </div>
+          <div class="assistant__section assistant__section--messages">
+            <div class="assistant__section-title">对话</div>
+            <div class="assistant__messages" id="assistant-messages"></div>
+          </div>
+          <div class="assistant__section">
+            <div class="assistant__section-title">任务</div>
+            <div class="assistant__tasks" id="assistant-tasks"></div>
+          </div>
           <div class="assistant__controls">
-              <div class="assistant__mode">
-                <label for="assistant-mode">模式</label>
-                <select id="assistant-mode">
-                  <option value="chat">Chat</option>
-                  <option value="agent">Agent</option>
-                </select>
-              </div>
             <textarea
               id="assistant-input"
-              placeholder="输入问题，回车发送；Shift+回车换行"
+              placeholder="输入目标或问题，回车发送；Shift+回车换行"
               rows="3"
             ></textarea>
             <div class="assistant__actions">
@@ -153,7 +187,7 @@
                 </div>
               </div>
               <div class="assistant__file-list" id="assistant-files"></div>
-              <div class="assistant__file-hint" id="assistant-file-hint">仅允许读取 data/ 目录下的文件。</div>
+              <div class="assistant__file-hint" id="assistant-file-hint">仅允许读取 data/ 目录下的文件；写文件会按自治级别决定是否先确认。</div>
             </div>
             <div class="assistant__status" id="assistant-status">未连接</div>
           </div>

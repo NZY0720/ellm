@@ -1,0 +1,54 @@
+{
+  "kind": "realtime-simulator",
+  "revision": 5,
+  "sim_step": 5,
+  "latest_slot": 3,
+  "latest_hour": 0.05,
+  "latest_datetime": "2026-03-16T15:56:00",
+  "window_days": 30,
+  "step_minutes": 1,
+  "tick_seconds": 1.0,
+  "target_file": "D:\\DeskFiles\\LLM_project\\frontend\\data\\虚拟电厂_24h15min_数据.csv",
+  "updated_at": "2026-03-16T07:59:40.250103+00:00",
+  "backend_sync": {
+    "predict": {
+      "files": [
+        "output/Load_forecast_12h.csv",
+        "output/PV_forecast_12h.csv"
+      ],
+      "ok": true,
+      "stats": {
+        "history_file": "虚拟电厂_24h15min_数据.csv",
+        "history_step_minutes": 1,
+        "horizon_hours": 12.0,
+        "last_hour": 720.05,
+        "lookback": 32,
+        "model": "lstm",
+        "retrain": false,
+        "step_minutes": 1,
+        "steps": 720,
+        "window_rows": 1440
+      },
+      "warnings": []
+    },
+    "decision": {
+      "files": [
+        "output/Market_decision_12h.csv"
+      ],
+      "ok": true,
+      "stats": {
+        "capacity_kwh": 200.0,
+        "horizon_hours": 12.0,
+        "objective": "minimize grid cost (buy positive / sell negative) at market price",
+        "p_max_kw": 100.0,
+        "soc_final_kwh": 100.0,
+        "soc_initial_kwh": 100.0,
+        "step_minutes": 1,
+        "steps": 720,
+        "window_hours": 24.0,
+        "window_rows": 1440
+      },
+      "warnings": []
+    }
+  }
+}

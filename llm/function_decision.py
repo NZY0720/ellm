@@ -1,6 +1,7 @@
 import csv
 import math
 import os
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -46,6 +47,77 @@ def _read_csv_rows(path: str) -> List[Dict[str, str]]:
         return [row for row in reader if row]
 
 
+def _extract_hour_value(row: Dict[str, str]) -> Optional[float]:
+    hour = _safe_float(row.get("时间_小时"))
+    if hour is not None:
+        return hour
+    period = _safe_float(row.get("时间_时段"))
+    if period is not None:
+        return period - 1.0
+    return None
+
+
+def _infer_history_step_minutes(rows: List[Dict[str, str]]) -> int:
+    diffs: List[float] = []
+    prev: Optional[float] = None
+    for row in rows[-256:]:
+        hour = _extract_hour_value(row)
+        if hour is None:
+            continue
+        if prev is not None:
+            diff_h = hour - prev
+            if diff_h > 0:
+                diffs.append(diff_h * 60.0)
+        prev = hour
+    if not diffs:
+        return 1
+    diffs.sort()
+    return max(1, int(round(diffs[len(diffs) // 2])))
+
+
+def _resample_history_rows(rows: List[Dict[str, str]], target_step_minutes: int) -> List[Dict[str, str]]:
+    if not rows:
+        return rows
+    actual_step = _infer_history_step_minutes(rows)
+    if actual_step >= target_step_minutes:
+        return rows
+    if target_step_minutes % actual_step != 0:
+        return rows
+
+    group_size = int(round(target_step_minutes / actual_step))
+    if group_size <= 1:
+        return rows
+
+    usable = len(rows) - (len(rows) % group_size)
+    if usable <= 0:
+        return rows
+
+    result: List[Dict[str, str]] = []
+    for start in range(0, usable, group_size):
+        chunk = rows[start : start + group_size]
+        last = chunk[-1]
+
+        def _avg(key: str) -> str:
+            values = [_safe_float(item.get(key)) for item in chunk]
+            clean = [float(v) for v in values if v is not None]
+            if not clean:
+                return ""
+            avg = sum(clean) / len(clean)
+            return f"{avg:.6f}".rstrip("0").rstrip(".")
+
+        result.append(
+            {
+                "Datetime": str(last.get("Datetime", "")),
+                "时间_小时": str(last.get("时间_小时", "")),
+                "时间_时段": str(last.get("时间_时段", "")),
+                "光伏出力_kW": _avg("光伏出力_kW"),
+                "负荷消耗_kW": _avg("负荷消耗_kW"),
+                "实时电价_元/kWh": _avg("实时电价_元/kWh"),
+            }
+        )
+    return result
+
+
 def _parse_hour(text: str) -> Optional[float]:
     if not text:
         return None
@@ -55,6 +127,12 @@ def _parse_hour(text: str) -> Optional[float]:
     if s.replace(".", "", 1).isdigit():
         return float(s)
     if ":" in s:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M"):
+            try:
+                dt = datetime.strptime(s, fmt)
+                return float(dt.hour) + float(dt.minute) / 60.0
+            except ValueError:
+                continue
         parts = s.split(":")
         if len(parts) == 2:
             h = _safe_float(parts[0])
@@ -70,13 +148,10 @@ def _build_time_of_day_price_map(history_rows: List[Dict[str, str]]) -> Tuple[Di
     buckets: Dict[float, List[float]] = {}
 
     for r in history_rows:
-        hour = _safe_float(r.get("时间_小时"))
-        if hour is None:
-            period = _safe_float(r.get("时间_时段"))
-            if period is not None:
-                hour = (period - 1.0) * 0.25
+        hour = _extract_hour_value(r)
         if hour is None:
             continue
+        hour = float(hour) % 24.0
         price = _safe_float(r.get("实时电价_元/kWh"))
         if price is None:
             continue
@@ -113,6 +188,7 @@ def _dp_optimize_storage(
     soc0_kwh: float,
     socT_kwh: float,
     p_max_kw: float,
+    soc_step_kwh: float,
     power_step_kw: float = 1.0,
 ) -> Tuple[List[float], List[float], List[float]]:
     """
@@ -123,7 +199,7 @@ def _dp_optimize_storage(
     if steps <= 0:
         return [], [], []
 
-    soc_step = dt_h * power_step_kw
+    soc_step = soc_step_kwh
     if soc_step <= 0:
         raise ValueError("invalid soc step")
 
@@ -232,8 +308,6 @@ def build_market_decision_12h(
 
     dt_h = step_minutes / 60.0
     steps = int(round(horizon_hours / dt_h))
-    window_rows = int(round(window_hours / dt_h))
-
     history_path = os.path.join(data_dir, history_file)
     if not os.path.exists(history_path):
         return DecisionOutput(ok=False, message=f"历史数据不存在: {history_file}")
@@ -247,7 +321,10 @@ def build_market_decision_12h(
 
     try:
         history_rows_all = _read_csv_rows(history_path)
-        history_rows = history_rows_all[-window_rows:] if len(history_rows_all) > window_rows else history_rows_all
+        history_step_minutes = _infer_history_step_minutes(history_rows_all)
+        raw_window_rows = int(round(window_hours * 60.0 / history_step_minutes))
+        history_rows_raw = history_rows_all[-raw_window_rows:] if len(history_rows_all) > raw_window_rows else history_rows_all
+        history_rows = _resample_history_rows(history_rows_raw, step_minutes)
     except OSError as exc:
         return DecisionOutput(ok=False, message=f"历史数据读取失败: {exc}")
 
@@ -259,11 +336,7 @@ def build_market_decision_12h(
 
     # Determine last hour from history (time axis base)
     last = history_rows[-1]
-    last_hour = _safe_float(last.get("时间_小时"))
-    if last_hour is None:
-        period = _safe_float(last.get("时间_时段"))
-        if period is not None:
-            last_hour = (period - 1.0) * 0.25
+    last_hour = _extract_hour_value(last)
     if last_hour is None:
         return DecisionOutput(ok=False, message="无法从历史数据解析最后时间点（时间_小时/时间_时段）")
 
@@ -315,7 +388,8 @@ def build_market_decision_12h(
         soc0_kwh=soc0,
         socT_kwh=socT,
         p_max_kw=p_max_kw,
-        power_step_kw=1.0,
+        soc_step_kwh=1.0 if step_minutes <= 5 else 0.5,
+        power_step_kw=5.0 if step_minutes <= 5 else 2.0,
     )
 
     # Build CSV
