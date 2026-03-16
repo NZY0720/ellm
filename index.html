@@ -14,7 +14,7 @@
       <div class="topbar__left">
         <div class="brand">VPP 年度数据 Dashboard</div>
         <div class="subtitle">
-          数据源：<code>data/VPP一年优化数据.csv</code>
+          数据源：<code>data/虚拟电厂_24h15min_数据.csv</code>
           <span class="subtitle__sep">·</span>
           最后更新：<span id="last-updated">-</span>
         </div>
@@ -30,12 +30,12 @@
           <div class="section__title">筛选与概览</div>
           <div class="controls">
             <div class="control">
-              <label for="start">起始 Datetime</label>
-              <input id="start" type="text" placeholder="YYYY/M/D H:mm" />
+              <label for="start">起始 时间</label>
+              <input id="start" type="text" placeholder="H:MM（例如 6:00）或 小时数（例如 6.0）" />
             </div>
             <div class="control">
-              <label for="end">结束 Datetime</label>
-              <input id="end" type="text" placeholder="YYYY/M/D H:mm" />
+              <label for="end">结束 时间</label>
+              <input id="end" type="text" placeholder="H:MM（例如 18:00）或 小时数（例如 18.0）" />
             </div>
             <div class="control">
               <label for="metric">主图指标</label>
@@ -54,24 +54,16 @@
               <div class="kpi__value" id="kpi-rows">-</div>
             </div>
             <div class="kpi">
-              <div class="kpi__label">Load_MW（均值/峰值）</div>
+              <div class="kpi__label">负荷（kW，均值/峰值）</div>
               <div class="kpi__value" id="kpi-load">-</div>
             </div>
             <div class="kpi">
-              <div class="kpi__label">Wind_MW（均值/峰值）</div>
-              <div class="kpi__value" id="kpi-wind">-</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi__label">PV_MW（均值/峰值）</div>
+              <div class="kpi__label">光伏（kW，均值/峰值）</div>
               <div class="kpi__value" id="kpi-pv">-</div>
             </div>
             <div class="kpi">
-              <div class="kpi__label">Gas_MW（均值/峰值）</div>
-              <div class="kpi__value" id="kpi-gas">-</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi__label">ES_SOC_MWh（最小/最大）</div>
-              <div class="kpi__value" id="kpi-soc">-</div>
+              <div class="kpi__label">实时电价（元/kWh，均值/峰值）</div>
+              <div class="kpi__value" id="kpi-price">-</div>
             </div>
           </div>
         </div>
@@ -83,25 +75,32 @@
           </div>
 
           <div class="card">
-            <div class="card__title">出力与储能功率（MW）</div>
+            <div class="card__title">负荷 / 光伏 / 电价</div>
             <div class="chart" id="chart-mix"></div>
           </div>
 
           <div class="card card--full">
-          <div class="card__title">储能规划 SOC（MWh）</div>
-            <div class="chart" id="chart-soc"></div>
-          </div>
-
-          <div class="card card--full">
             <div class="card__header">
-              <div class="card__title">预测结果（24h）</div>
+              <div class="card__title">预测结果（未来 12h）</div>
               <div class="card__tools">
                 <label for="forecast-type">展示</label>
                 <select id="forecast-type"></select>
+                <button id="forecast-run" class="btn btn--primary">运行预测</button>
               </div>
             </div>
             <div class="chart" id="chart-forecast"></div>
             <div class="forecast__hint" id="forecast-hint">-</div>
+          </div>
+
+          <div class="card card--full">
+            <div class="card__header">
+              <div class="card__title">决策结果（未来 12h）</div>
+              <div class="card__tools">
+                <button id="decision-run" class="btn btn--primary">生成决策</button>
+              </div>
+            </div>
+            <div class="chart" id="chart-decision"></div>
+            <div class="forecast__hint" id="decision-hint">-</div>
           </div>
 
           <div class="card card--full">
@@ -142,7 +141,7 @@
               <div class="assistant__file-row assistant__file-row--path">
                 <label for="assistant-path">读取 data/ 路径</label>
                 <div class="assistant__file-path">
-                  <input id="assistant-path" type="text" value="data/VPP一年优化数据.csv" />
+                  <input id="assistant-path" type="text" value="data/虚拟电厂_24h15min_数据.csv" />
                   <button id="assistant-load" class="btn">读取</button>
                 </div>
               </div>

@@ -1,42 +1,30 @@
 /* global Papa, echarts */
 
 const DATA_ROOT = 'data';
-const CSV_FILE = `${DATA_ROOT}/VPP一年优化数据.csv`;
+const CSV_FILE = `${DATA_ROOT}/虚拟电厂_24h15min_数据.csv`;
 const REFRESH_MS = 60 * 1000;
 
 const METRICS = [
-  { key: 'Load_MW', label: '负荷 Load_MW' },
-  { key: 'Wind_MW', label: '风电 Wind_MW' },
-  { key: 'PV_MW', label: '光伏 PV_MW' },
-  { key: 'Gas_MW_Optimized', label: '燃气 Gas_MW_Optimized' },
-  { key: 'ES_MW_Optimized', label: '储能功率 ES_MW_Optimized（放电为正/充电为负）' },
-  { key: 'ES_SOC_Optimized', label: '储能 SOC ES_SOC_Optimized' },
+  { key: '负荷消耗_kW', label: '负荷（kW）' },
+  { key: '光伏出力_kW', label: '光伏（kW）' },
+  { key: '实时电价_元/kWh', label: '实时电价（元/kWh）' },
 ];
 
 const FORECAST_TYPES = [
   {
     key: 'load',
     label: '负荷',
-    file: `${DATA_ROOT}/output/Load_forecast_24h.csv`,
-    agentFile: `${DATA_ROOT}/output/Load_forecast_24h_agent.csv`,
+    file: `${DATA_ROOT}/output/Load_forecast_12h.csv`,
+    agentFile: `${DATA_ROOT}/output/Load_forecast_12h_agent.csv`,
     valueKey: 'Load_Forecast',
     color: '#5b8cff',
     agentColor: '#9bb7ff',
   },
   {
-    key: 'wind',
-    label: '风电',
-    file: `${DATA_ROOT}/output/Wind_forecast_24h.csv`,
-    agentFile: `${DATA_ROOT}/output/Wind_forecast_24h_agent.csv`,
-    valueKey: 'Wind_Forecast',
-    color: '#3ddc97',
-    agentColor: '#7be9bf',
-  },
-  {
     key: 'pv',
     label: '光伏',
-    file: `${DATA_ROOT}/output/PV_forecast_24h.csv`,
-    agentFile: `${DATA_ROOT}/output/PV_forecast_24h_agent.csv`,
+    file: `${DATA_ROOT}/output/PV_forecast_12h.csv`,
+    agentFile: `${DATA_ROOT}/output/PV_forecast_12h_agent.csv`,
     valueKey: 'PV_Forecast',
     color: '#ffcc66',
     agentColor: '#ffe19b',
@@ -46,22 +34,13 @@ const FORECAST_TYPES = [
 const ASSISTANT_API = 'http://127.0.0.1:8000/chat';
 const ASSISTANT_AGENT = 'http://127.0.0.1:8000/agent';
 const ASSISTANT_HEALTH = 'http://127.0.0.1:8000/health';
+const ASSISTANT_PREDICT12H = 'http://127.0.0.1:8000/predict12h';
+const ASSISTANT_DECISION12H = 'http://127.0.0.1:8000/decision12h';
 const MAX_FILE_CHARS = 200000;
-const STORAGE_PLAN_CANDIDATES = [
-  'output/ES_decision_24h_agent.csv',
-  'output/ES_decision_12h_agent.csv',
-  'output/ES_decision_6h_agent.csv',
-  'output/ES_decision_1h_agent.csv',
-].map((name) => `${DATA_ROOT}/${name}`);
 const AGENT_TARGETS = [
-  { value: 'VPP一年优化数据_agent.csv', label: 'data/VPP一年优化数据_agent.csv' },
-  { value: 'output/Load_forecast_24h_agent.csv', label: 'data/output/Load_forecast_24h_agent.csv' },
-  { value: 'output/PV_forecast_24h_agent.csv', label: 'data/output/PV_forecast_24h_agent.csv' },
-  { value: 'output/Wind_forecast_24h_agent.csv', label: 'data/output/Wind_forecast_24h_agent.csv' },
-  { value: 'output/ES_decision_1h_agent.csv', label: 'data/output/ES_decision_1h_agent.csv' },
-  { value: 'output/ES_decision_6h_agent.csv', label: 'data/output/ES_decision_6h_agent.csv' },
-  { value: 'output/ES_decision_12h_agent.csv', label: 'data/output/ES_decision_12h_agent.csv' },
-  { value: 'output/ES_decision_24h_agent.csv', label: 'data/output/ES_decision_24h_agent.csv' },
+  { value: '虚拟电厂_24h15min_数据_agent.csv', label: 'data/虚拟电厂_24h15min_数据_agent.csv' },
+  { value: 'output/Load_forecast_12h_agent.csv', label: 'data/output/Load_forecast_12h_agent.csv' },
+  { value: 'output/PV_forecast_12h_agent.csv', label: 'data/output/PV_forecast_12h_agent.csv' },
 ];
 
 function $(id) {
@@ -123,6 +102,20 @@ function downloadText(filename, text) {
 function parseDatetime(text) {
   if (!text) return NaN;
   const s = String(text).trim();
+  // Numeric hours like "6" / "6.25" (for 15min data)
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const hours = Number(s);
+    if (!Number.isFinite(hours)) return NaN;
+    return hours * 60 * 60 * 1000;
+  }
+  // "H:MM"
+  const hm = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (hm) {
+    const h = Number(hm[1]);
+    const m2 = Number(hm[2]);
+    if (!Number.isFinite(h) || !Number.isFinite(m2)) return NaN;
+    return (h * 60 + m2) * 60 * 1000;
+  }
   const m = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(s);
   if (!m) return NaN;
   const year = Number(m[1]);
@@ -136,7 +129,17 @@ function parseDatetime(text) {
 }
 
 function formatDatetime(dt) {
-  const d = dt instanceof Date ? dt : new Date(dt);
+  const ms = dt instanceof Date ? dt.getTime() : Number(dt);
+  if (!Number.isFinite(ms)) return '';
+  // If it's a small synthetic range (<= 48h), render as H:MM.
+  if (ms >= 0 && ms <= 48 * 60 * 60 * 1000) {
+    const totalMin = Math.round(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    const pad2 = (n) => String(n).padStart(2, '0');
+    return `${h}:${pad2(m)}`;
+  }
+  const d = new Date(ms);
   const pad2 = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${pad2(d.getMinutes())}`;
 }
@@ -172,7 +175,7 @@ function guessTimeRange(rows) {
 function recentWindowRange(rows, hours = 24) {
   const base = guessTimeRange(rows);
   if (!Number.isFinite(base.maxMs)) return base;
-  const startMs = base.maxMs - hours * 60 * 60 * 1000;
+  const startMs = Math.max(base.minMs, base.maxMs - hours * 60 * 60 * 1000);
   return {
     minMs: startMs,
     maxMs: base.maxMs,
@@ -284,25 +287,9 @@ async function loadCsvOptional(file) {
   }
 }
 
-async function resolveLatestStoragePlan() {
-  const loaded = await Promise.all(STORAGE_PLAN_CANDIDATES.map(async (file) => {
-    const rows = await loadCsvOptional(file);
-    if (!rows) return { file, rows: [], maxTs: -Infinity };
-    const maxTs = rows.reduce((acc, r) => {
-      const t = parseDatetime(r.Datetime);
-      return Number.isFinite(t) ? Math.max(acc, t) : acc;
-    }, -Infinity);
-    return { file, rows, maxTs };
-  }));
-  const valid = loaded.filter((item) => item.maxTs > -Infinity);
-  if (!valid.length) return { file: '', rows: [] };
-  const picked = valid.sort((a, b) => b.maxTs - a.maxTs)[0];
-  return { file: picked.file, rows: picked.rows };
-}
-
 function initMetricSelect(selectEl) {
   selectEl.innerHTML = METRICS.map((m) => `<option value="${m.key}">${m.label}</option>`).join('');
-  selectEl.value = 'Load_MW';
+  selectEl.value = '负荷消耗_kW';
 }
 
 function initForecastSelect(selectEl) {
@@ -316,17 +303,13 @@ function getForecastConfig(key) {
 
 function setKpis(rows) {
   $('kpi-rows').textContent = `${rows.length}`;
-  const load = stat(rows.map((r) => Number(r.Load_MW)));
-  const wind = stat(rows.map((r) => Number(r.Wind_MW)));
-  const pv = stat(rows.map((r) => Number(r.PV_MW)));
-  const gas = stat(rows.map((r) => Number(r.Gas_MW_Optimized)));
-  const soc = stat(rows.map((r) => Number(r.ES_SOC_Optimized)));
+  const load = stat(rows.map((r) => Number(r['负荷消耗_kW'])));
+  const pv = stat(rows.map((r) => Number(r['光伏出力_kW'])));
+  const price = stat(rows.map((r) => Number(r['实时电价_元/kWh'])));
 
   $('kpi-load').textContent = `${fmt(load.avg)} / ${fmt(load.max)}`;
-  $('kpi-wind').textContent = `${fmt(wind.avg)} / ${fmt(wind.max)}`;
   $('kpi-pv').textContent = `${fmt(pv.avg)} / ${fmt(pv.max)}`;
-  $('kpi-gas').textContent = `${fmt(gas.avg)} / ${fmt(gas.max)}`;
-  $('kpi-soc').textContent = `${fmt(soc.min)} / ${fmt(soc.max)}`;
+  $('kpi-price').textContent = `${fmt(price.avg, 3)} / ${fmt(price.max, 3)}`;
 }
 
 function buildX(rows) {
@@ -356,14 +339,12 @@ function renderMainChart(chart, rows, metricKey) {
 
 function renderMixChart(chart, rows) {
   const x = buildX(rows);
-  const wind = rows.map((r) => Number(r.Wind_MW));
-  const pv = rows.map((r) => Number(r.PV_MW));
-  const gas = rows.map((r) => Number(r.Gas_MW_Optimized));
-  const es = rows.map((r) => Number(r.ES_MW_Optimized));
-  const load = rows.map((r) => Number(r.Load_MW));
+  const pv = rows.map((r) => Number(r['光伏出力_kW']));
+  const load = rows.map((r) => Number(r['负荷消耗_kW']));
+  const price = rows.map((r) => Number(r['实时电价_元/kWh']));
 
-  const { x: x2, seriesArr: [wind2, pv2, gas2, es2, load2] } = downsampleCategory(x, [wind, pv, gas, es, load], 2500);
-  const opt = baseChartOption('出力与储能功率（MW）', x2);
+  const { x: x2, seriesArr: [pv2, load2, price2] } = downsampleCategory(x, [pv, load, price], 2500);
+  const opt = baseChartOption('负荷 / 光伏 / 电价', x2);
   opt.yAxis = [
     opt.yAxis,
     {
@@ -375,83 +356,18 @@ function renderMixChart(chart, rows) {
   ];
 
   opt.series = [
-    { name: 'Wind_MW', type: 'line', showSymbol: false, data: wind2, lineStyle: { width: 1.8, color: '#3ddc97' } },
-    { name: 'PV_MW', type: 'line', showSymbol: false, data: pv2, lineStyle: { width: 1.8, color: '#ffcc66' } },
-    { name: 'Gas_MW', type: 'line', showSymbol: false, data: gas2, lineStyle: { width: 1.8, color: '#ff6b6b' } },
     {
-      name: 'ES_MW',
+      name: '负荷(kW)',
       type: 'line',
-      showSymbol: false,
-      data: es2,
-      lineStyle: { width: 1.8, color: '#9b7bff' },
-      markLine: {
-        silent: true,
-        symbol: ['none', 'none'],
-        lineStyle: { color: 'rgba(255,255,255,0.25)' },
-        data: [{ yAxis: 0 }],
-      },
-    },
-    {
-      name: 'Load_MW',
-      type: 'line',
-      yAxisIndex: 1,
       showSymbol: false,
       data: load2,
       lineStyle: { width: 2.2, color: '#5b8cff' },
       emphasis: { focus: 'series' },
     },
+    { name: '光伏(kW)', type: 'line', showSymbol: false, data: pv2, lineStyle: { width: 1.8, color: '#ffcc66' } },
+    { name: '电价(元/kWh)', type: 'line', yAxisIndex: 1, showSymbol: false, data: price2, lineStyle: { width: 1.6, color: '#3ddc97', type: 'dashed' } },
   ];
 
-  chart.setOption(opt, true);
-}
-
-function renderSocChart(chart, actualRows, planRows) {
-  const actualSorted = [...actualRows].sort((a, b) => a._ts - b._ts);
-  const planSorted = [...planRows].sort((a, b) => a._ts - b._ts);
-  const lastActualTs = actualSorted.length ? actualSorted[actualSorted.length - 1]._ts : -Infinity;
-  const futurePlan = planSorted.filter((r) => r._ts > lastActualTs);
-
-  const combined = [];
-  for (const r of actualSorted) {
-    combined.push({
-      label: String(r.Datetime),
-      actual: Number(r.ES_SOC_Optimized),
-      plan: null,
-    });
-  }
-  for (const r of futurePlan) {
-    combined.push({
-      label: String(r.Datetime),
-      actual: null,
-      plan: Number(r.SOC),
-    });
-  }
-
-  const x = combined.map((r) => r.label);
-  const actual = combined.map((r) => (Number.isFinite(r.actual) ? r.actual : null));
-  const plan = combined.map((r) => (Number.isFinite(r.plan) ? r.plan : null));
-  const { x: x2, seriesArr: [actual2, plan2] } = downsampleCategory(x, [actual, plan], 2500);
-
-  const opt = baseChartOption('储能规划 SOC（MWh）', x2);
-  opt.series = [
-    {
-      name: '历史 SOC（近24h）',
-      type: 'line',
-      showSymbol: false,
-      data: actual2,
-      lineStyle: { width: 2, color: '#ffcc66' },
-      areaStyle: { opacity: 0.08, color: '#ffcc66' },
-    },
-    {
-      name: '规划 SOC',
-      type: 'line',
-      showSymbol: false,
-      data: plan2,
-      lineStyle: { width: 2, color: '#5b8cff' },
-      areaStyle: { opacity: 0.10, color: '#5b8cff' },
-      emphasis: { focus: 'series' },
-    },
-  ];
   chart.setOption(opt, true);
 }
 
@@ -473,7 +389,7 @@ function renderForecastChart(chart, rows, agentRows, config) {
   });
 
   const { x: x2, seriesArr: [y2, yAgent2] } = downsampleCategory(x, [y, yAgent], 500);
-  const opt = baseChartOption(`${config.label}预测（24h）`, x2);
+  const opt = baseChartOption(`${config.label}预测（12h）`, x2);
   opt.series = [
     {
       name: `${config.label}预测`,
@@ -495,6 +411,40 @@ function renderForecastChart(chart, rows, agentRows, config) {
       emphasis: { focus: 'series' },
     });
   }
+  chart.setOption(opt, true);
+}
+
+function renderDecisionChart(chart, rawRows) {
+  const rows = (rawRows || []).map((r) => ({
+    Datetime: r.Datetime,
+    Battery_Power_kW: Number(r.Battery_Power_kW),
+    SOC_kWh: Number(r.SOC_kWh),
+    Grid_Power_kW: Number(r.Grid_Power_kW),
+    Price_yuan_per_kWh: Number(r.Price_yuan_per_kWh),
+  }));
+  const x = rows.map((r) => String(r.Datetime));
+  const batt = rows.map((r) => (Number.isFinite(r.Battery_Power_kW) ? r.Battery_Power_kW : null));
+  const grid = rows.map((r) => (Number.isFinite(r.Grid_Power_kW) ? r.Grid_Power_kW : null));
+  const soc = rows.map((r) => (Number.isFinite(r.SOC_kWh) ? r.SOC_kWh : null));
+  const price = rows.map((r) => (Number.isFinite(r.Price_yuan_per_kWh) ? r.Price_yuan_per_kWh : null));
+
+  const { x: x2, seriesArr: [batt2, grid2, soc2, price2] } = downsampleCategory(x, [batt, grid, soc, price], 500);
+  const opt = baseChartOption('储能 / 购售电决策（12h）', x2);
+  opt.yAxis = [
+    opt.yAxis,
+    {
+      type: 'value',
+      axisLabel: { color: 'rgba(255,255,255,0.62)' },
+      splitLine: { show: false },
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.22)' } },
+    },
+  ];
+  opt.series = [
+    { name: '电池功率(kW，放电为正)', type: 'bar', data: batt2, itemStyle: { color: 'rgba(155,123,255,0.75)' } },
+    { name: '电网功率(kW，购电为正)', type: 'line', showSymbol: false, data: grid2, lineStyle: { width: 2, color: '#5b8cff' } },
+    { name: 'SOC(kWh)', type: 'line', yAxisIndex: 1, showSymbol: false, data: soc2, lineStyle: { width: 2, color: '#ffcc66' } },
+    { name: '电价(元/kWh)', type: 'line', yAxisIndex: 1, showSymbol: false, data: price2, lineStyle: { width: 1.6, color: '#3ddc97', type: 'dashed' } },
+  ];
   chart.setOption(opt, true);
 }
 
@@ -810,63 +760,35 @@ async function main() {
   }
 
   function normalize(rawRows) {
-    // 标准化：确保字段存在且数值为 number
-    return rawRows.map((r) => ({
-      Datetime: r.Datetime,
-      _ts: parseDatetime(r.Datetime),
-      Load_MW: r.Load_MW,
-      Wind_MW: r.Wind_MW,
-      PV_MW: r.PV_MW,
-      ES_MW_Optimized: r.ES_MW_Optimized,
-      Gas_MW_Optimized: r.Gas_MW_Optimized,
-      ES_SOC_Optimized: r.ES_SOC_Optimized,
-    })).filter((r) => Number.isFinite(r._ts));
-  }
+    // New data source (24h, 15min): build a time axis from 时间_小时 / 时间_时段
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const fmtHM = (hours) => {
+      const h = Math.floor(hours);
+      const minutes = Math.round((hours - h) * 60);
+      const mm = Math.max(0, Math.min(59, minutes));
+      return `${h}:${pad2(mm)}`;
+    };
 
-  function normalizePlan(rawRows, baseSoc) {
-    const parsed = rawRows.map((r) => {
-      const soc = r.SOC ?? r.ES_SOC_Decision ?? r.ES_SOC_Optimized ?? r.ES_SOC;
-      const power = r.ES_Power ?? r.ES_MW_Decision ?? r.ES_MW ?? r.ES_MW_Optimized;
+    return rawRows.map((r) => {
+      const hour = Number(r['时间_小时']);
+      const period = Number(r['时间_时段']);
+      const hours = Number.isFinite(hour)
+        ? hour
+        : (Number.isFinite(period) ? (period - 1) * 0.25 : NaN);
+      const label = Number.isFinite(hours) ? fmtHM(hours) : '';
       return {
-        Datetime: r.Datetime,
-        _ts: parseDatetime(r.Datetime),
-        SOC: Number(soc),
-        power: Number(power),
+        Datetime: label || String(r.Datetime ?? ''),
+        _ts: Number.isFinite(hours) ? hours * 60 * 60 * 1000 : parseDatetime(label),
+        '时间_小时': r['时间_小时'],
+        '时间_时段': r['时间_时段'],
+        '负荷消耗_kW': r['负荷消耗_kW'],
+        '光伏出力_kW': r['光伏出力_kW'],
+        '实时电价_元/kWh': r['实时电价_元/kWh'],
       };
     }).filter((r) => Number.isFinite(r._ts));
-
-    const hasSoc = parsed.some((r) => Number.isFinite(r.SOC));
-    if (hasSoc) {
-      return parsed.filter((r) => Number.isFinite(r.SOC));
-    }
-
-    if (!Number.isFinite(baseSoc)) return [];
-    const withPower = parsed.filter((r) => Number.isFinite(r.power)).sort((a, b) => a._ts - b._ts);
-    let soc = baseSoc;
-    return withPower.map((r) => {
-      soc -= r.power;
-      return { Datetime: r.Datetime, _ts: r._ts, SOC: soc };
-    });
-  }
-
-  function getLatestSoc(rows) {
-    let latestTs = -Infinity;
-    let latestSoc = NaN;
-    for (const r of rows) {
-      if (Number.isFinite(r._ts) && r._ts >= latestTs) {
-        const soc = Number(r.ES_SOC_Optimized);
-        if (Number.isFinite(soc)) {
-          latestTs = r._ts;
-          latestSoc = soc;
-        }
-      }
-    }
-    return latestSoc;
   }
 
   let rows = normalize(await loadCsv());
-  let planRows = [];
-  let planFile = '';
   setLastUpdated(new Date());
 
   let range = guessTimeRange(rows);
@@ -877,7 +799,10 @@ async function main() {
   const resetEl = $('reset');
   const downloadEl = $('download');
   const forecastEl = $('forecast-type');
+  const forecastRunEl = $('forecast-run');
   const forecastHintEl = $('forecast-hint');
+  const decisionRunEl = $('decision-run');
+  const decisionHintEl = $('decision-hint');
 
   function clampInputsToRange() {
     const s = parseDatetime(startEl.value);
@@ -901,21 +826,18 @@ async function main() {
 
   const chartMain = echarts.init($('chart-main'));
   const chartMix = echarts.init($('chart-mix'));
-  const chartSoc = echarts.init($('chart-soc'));
   const chartForecast = echarts.init($('chart-forecast'));
-  attachResize([chartMain, chartMix, chartSoc, chartForecast]);
+  const chartDecision = echarts.init($('chart-decision'));
+  attachResize([chartMain, chartMix, chartForecast, chartDecision]);
 
-  const columns = ['Datetime', 'Load_MW', 'Wind_MW', 'PV_MW', 'ES_MW_Optimized', 'Gas_MW_Optimized', 'ES_SOC_Optimized'];
+  const columns = ['Datetime', '时间_小时', '时间_时段', '负荷消耗_kW', '光伏出力_kW', '实时电价_元/kWh'];
   const tableEl = $('table');
 
   function render() {
     const filtered = pickRowsByTime(rows, startEl.value, endEl.value);
-    const recent = recentWindowRange(rows, 24);
-    const actualSocRows = pickRowsByMs(rows, recent.minMs, recent.maxMs);
     setKpis(filtered);
     renderMainChart(chartMain, filtered, metricEl.value);
     renderMixChart(chartMix, filtered);
-    renderSocChart(chartSoc, actualSocRows, planRows);
     buildTable(tableEl, columns, filtered, 200);
   }
 
@@ -924,13 +846,16 @@ async function main() {
     const recent = recentWindowRange(rows, 24);
     startEl.value = recent.minLabel;
     endEl.value = recent.maxLabel;
-    metricEl.value = 'Load_MW';
+    metricEl.value = '负荷消耗_kW';
     render();
   });
   metricEl.addEventListener('change', render);
 
   function setForecastHint(text) {
     if (forecastHintEl) forecastHintEl.textContent = text;
+  }
+  function setDecisionHint(text) {
+    if (decisionHintEl) decisionHintEl.textContent = text;
   }
 
   let forecastRefreshing = false;
@@ -951,43 +876,132 @@ async function main() {
       setForecastHint(`数据源：${config.file}${agentHint}`);
     } catch (e) {
       console.warn('读取预测数据失败：', e);
-      setForecastHint(`读取预测数据失败：${(e && e.message) ? e.message : String(e)}`);
+      const msg = (e && e.message) ? e.message : String(e);
+      const missing = /404/.test(msg) || /Not Found/i.test(msg);
+      setForecastHint(missing
+        ? `暂无预测文件：${config.file}。点击“运行预测”生成一次 12h 预测。`
+        : `读取预测数据失败：${msg}`
+      );
       renderForecastChart(chartForecast, [], [], config);
     } finally {
       forecastRefreshing = false;
     }
   }
 
+  async function runPredictOnce() {
+    if (!forecastRunEl) return;
+    forecastRunEl.disabled = true;
+    const oldText = forecastRunEl.textContent;
+    forecastRunEl.textContent = '预测中...';
+    setForecastHint('正在调用本地 Agent 生成 12h 预测...');
+    try {
+      const res = await fetch(ASSISTANT_PREDICT12H, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history_file: '虚拟电厂_24h15min_数据.csv',
+          window_hours: 24,
+          horizon_hours: 12,
+          step_minutes: 15,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const err = data.error || `HTTP ${res.status}`;
+        throw new Error(err);
+      }
+      setForecastHint(`预测已生成并覆盖写入：${(data.files || []).join(', ') || 'ok'}`);
+      await refreshForecast();
+    } catch (err) {
+      const msg = (err && err.message) ? err.message : String(err);
+      setForecastHint(`运行预测失败：${msg}（请确认本地 Agent 已启动，端口 8000 可用）`);
+    } finally {
+      forecastRunEl.disabled = false;
+      forecastRunEl.textContent = oldText || '运行预测';
+    }
+  }
+
+  let decisionRefreshing = false;
+  async function refreshDecision() {
+    if (decisionRefreshing) return;
+    decisionRefreshing = true;
+    const file = `${DATA_ROOT}/output/Market_decision_12h.csv`;
+    setDecisionHint(`数据源：${file}（加载中...）`);
+    try {
+      const raw = await loadCsv(file);
+      renderDecisionChart(chartDecision, raw);
+      setDecisionHint(`数据源：${file}（${raw.length} 行）`);
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      const missing = /404/.test(msg) || /Not Found/i.test(msg);
+      setDecisionHint(missing
+        ? `暂无决策文件：${file}。先点击“运行预测”，再点击“生成决策”。`
+        : `读取决策数据失败：${msg}`
+      );
+      renderDecisionChart(chartDecision, []);
+    } finally {
+      decisionRefreshing = false;
+    }
+  }
+
+  async function runDecisionOnce() {
+    if (!decisionRunEl) return;
+    decisionRunEl.disabled = true;
+    const oldText = decisionRunEl.textContent;
+    decisionRunEl.textContent = '生成中...';
+    setDecisionHint('正在生成 12h 决策（经济效益最大化）...');
+    try {
+      const res = await fetch(ASSISTANT_DECISION12H, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          history_file: '虚拟电厂_24h15min_数据.csv',
+          load_forecast: 'output/Load_forecast_12h.csv',
+          pv_forecast: 'output/PV_forecast_12h.csv',
+          output_file: 'output/Market_decision_12h.csv',
+          horizon_hours: 12,
+          step_minutes: 15,
+          window_hours: 24,
+          capacity_kwh: 200,
+          p_max_kw: 100,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const err = data.error || `HTTP ${res.status}`;
+        throw new Error(err);
+      }
+      setDecisionHint(`决策已生成并覆盖写入：${(data.files || []).join(', ') || 'ok'}`);
+      await refreshDecision();
+    } catch (err) {
+      const msg = (err && err.message) ? err.message : String(err);
+      setDecisionHint(`生成决策失败：${msg}（请确认本地 Agent 已启动，且已先生成预测文件）`);
+    } finally {
+      decisionRunEl.disabled = false;
+      decisionRunEl.textContent = oldText || '生成决策';
+    }
+  }
+
   forecastEl.addEventListener('change', () => {
     refreshForecast();
   });
+  if (forecastRunEl) {
+    forecastRunEl.addEventListener('click', runPredictOnce);
+  }
+  if (decisionRunEl) {
+    decisionRunEl.addEventListener('click', runDecisionOnce);
+  }
 
   downloadEl.addEventListener('click', () => {
     const filtered = pickRowsByTime(rows, startEl.value, endEl.value);
     const csv = buildCsv(filtered, columns);
-    const name = `VPP筛选_${startEl.value}-${endEl.value}.csv`;
+    const name = `虚拟电厂筛选_${startEl.value}-${endEl.value}.csv`;
     downloadText(name, csv);
   });
 
   render();
-  let planRefreshing = false;
-  async function refreshPlan() {
-    if (planRefreshing) return;
-    planRefreshing = true;
-    try {
-      const latest = await resolveLatestStoragePlan();
-      const baseSoc = getLatestSoc(rows);
-      planFile = latest.file;
-      planRows = normalizePlan(latest.rows, baseSoc);
-      render();
-    } catch (e) {
-      console.warn('读取储能规划失败：', e);
-    } finally {
-      planRefreshing = false;
-    }
-  }
-  refreshPlan();
   refreshForecast();
+  refreshDecision();
 
   // 每分钟刷新一次数据（仅更新 dashboard，不刷新 iframe）
   let refreshing = false;
@@ -1011,8 +1025,8 @@ async function main() {
 
   setInterval(() => {
     refreshData();
-    refreshPlan();
     refreshForecast();
+    refreshDecision();
   }, REFRESH_MS);
 
   initAssistant();

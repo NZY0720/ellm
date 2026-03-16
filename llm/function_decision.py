@@ -1,30 +1,32 @@
 import csv
+import math
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from function_predict import write_agent_csv
-
-
-DEFAULT_HORIZONS = [1, 6, 12, 24]
+from function_predict import write_data_csv
 
 
 @dataclass
 class DecisionStats:
-    soc_min: float
-    soc_max: float
-    soc_initial: float
-    discharge_max: float
-    charge_max: float
-    net_target: float
+    horizon_hours: float
+    step_minutes: int
+    steps: int
+    window_hours: float
+    window_rows: int
+    capacity_kwh: float
+    soc_initial_kwh: float
+    soc_final_kwh: float
+    p_max_kw: float
+    objective: str
 
 
 @dataclass
 class DecisionOutput:
     ok: bool
     message: str
-    outputs: Dict[str, str] = field(default_factory=dict)
+    filename: str = ""
+    csv_text: str = ""
     warnings: List[str] = field(default_factory=list)
     stats: Optional[DecisionStats] = None
 
@@ -38,338 +40,344 @@ def _safe_float(value: object) -> Optional[float]:
         return None
 
 
-def _parse_datetime(value: str) -> Optional[datetime]:
-    if not value:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    fmts = [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y/%m/%d %H:%M:%S",
-        "%Y/%m/%d %H:%M",
-        "%Y/%m/%d %H:%M:%S",
-    ]
-    for fmt in fmts:
-        try:
-            return datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-    return None
-
-
-def _load_csv_rows(path: str) -> List[Dict[str, str]]:
-    with open(path, "r", encoding="utf-8") as f:
+def _read_csv_rows(path: str) -> List[Dict[str, str]]:
+    with open(path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         return [row for row in reader if row]
 
 
-def _compute_history_stats(rows: List[Dict[str, str]]) -> Tuple[DecisionStats, List[str]]:
+def _parse_hour(text: str) -> Optional[float]:
+    if not text:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    if s.replace(".", "", 1).isdigit():
+        return float(s)
+    if ":" in s:
+        parts = s.split(":")
+        if len(parts) == 2:
+            h = _safe_float(parts[0])
+            m = _safe_float(parts[1])
+            if h is None or m is None:
+                return None
+            return float(h) + float(m) / 60.0
+    return None
+
+
+def _build_time_of_day_price_map(history_rows: List[Dict[str, str]]) -> Tuple[Dict[float, float], List[str]]:
     warnings: List[str] = []
-    soc_values: List[float] = []
-    es_values: List[float] = []
-    net_values: List[float] = []
+    buckets: Dict[float, List[float]] = {}
 
-    for row in rows:
-        load = _safe_float(row.get("Load_MW"))
-        wind = _safe_float(row.get("Wind_MW"))
-        pv = _safe_float(row.get("PV_MW"))
-        es = _safe_float(row.get("ES_MW_Optimized"))
-        soc = _safe_float(row.get("ES_SOC_Optimized"))
-
-        if soc is not None:
-            soc_values.append(soc)
-        if es is not None:
-            es_values.append(es)
-        if load is not None and wind is not None and pv is not None:
-            net_values.append(load - wind - pv)
-
-    if not soc_values:
-        soc_min = 0.0
-        soc_max = 0.0
-        soc_initial = 0.0
-        warnings.append("历史数据缺少 ES_SOC_Optimized，SOC 统计使用 0 兜底")
-    else:
-        soc_min = min(soc_values)
-        soc_max = max(soc_values)
-        soc_initial = soc_values[-1]
-
-    if not es_values:
-        discharge_max = 0.0
-        charge_max = 0.0
-        warnings.append("历史数据缺少 ES_MW_Optimized，功率上限使用 0 兜底")
-    else:
-        discharge_max = max(0.0, max(es_values))
-        charge_max = max(0.0, abs(min(es_values)))
-
-    if not net_values:
-        net_target = 0.0
-        warnings.append("历史数据缺少净负荷统计，净负荷目标使用 0 兜底")
-    else:
-        net_target = sum(net_values) / len(net_values)
-
-    stats = DecisionStats(
-        soc_min=soc_min,
-        soc_max=soc_max,
-        soc_initial=soc_initial,
-        discharge_max=discharge_max,
-        charge_max=charge_max,
-        net_target=net_target,
-    )
-    return stats, warnings
-
-
-def _build_forecast_rows(
-    load_path: str,
-    wind_path: str,
-    pv_path: str,
-) -> Tuple[List[Dict[str, object]], List[str]]:
-    warnings: List[str] = []
-    load_rows = _load_csv_rows(load_path)
-    if not load_rows:
-        return [], ["负荷预测文件为空或无法解析"]
-
-    wind_map: Dict[datetime, float] = {}
-    pv_map: Dict[datetime, float] = {}
-
-    if os.path.exists(wind_path):
-        for row in _load_csv_rows(wind_path):
-            ts = _parse_datetime(row.get("Datetime", ""))
-            value = _safe_float(row.get("Wind_Forecast"))
-            if ts and value is not None:
-                wind_map[ts] = value
-    else:
-        warnings.append("风电预测文件不存在，默认使用 0")
-
-    if os.path.exists(pv_path):
-        for row in _load_csv_rows(pv_path):
-            ts = _parse_datetime(row.get("Datetime", ""))
-            value = _safe_float(row.get("PV_Forecast"))
-            if ts and value is not None:
-                pv_map[ts] = value
-    else:
-        warnings.append("光伏预测文件不存在，默认使用 0")
-
-    forecast_rows: List[Dict[str, object]] = []
-    for row in load_rows:
-        ts = _parse_datetime(row.get("Datetime", ""))
-        load_value = _safe_float(row.get("Load_Forecast"))
-        if ts is None or load_value is None:
+    for r in history_rows:
+        hour = _safe_float(r.get("时间_小时"))
+        if hour is None:
+            period = _safe_float(r.get("时间_时段"))
+            if period is not None:
+                hour = (period - 1.0) * 0.25
+        if hour is None:
             continue
-        wind_value = wind_map.get(ts, 0.0)
-        pv_value = pv_map.get(ts, 0.0)
-        forecast_rows.append(
-            {
-                "Datetime": ts,
-                "Load_Forecast": load_value,
-                "Wind_Forecast": wind_value,
-                "PV_Forecast": pv_value,
-            }
-        )
+        price = _safe_float(r.get("实时电价_元/kWh"))
+        if price is None:
+            continue
+        buckets.setdefault(float(hour), []).append(float(price))
 
-    if not forecast_rows:
-        warnings.append("负荷预测数据无法解析为时间序列")
+    if not buckets:
+        warnings.append("历史数据缺少 实时电价_元/kWh，电价将按 0 处理")
+        return {}, warnings
 
-    forecast_rows.sort(key=lambda r: r["Datetime"])
-    return forecast_rows, warnings
+    price_map = {k: (sum(v) / len(v)) for k, v in buckets.items() if v}
+    return price_map, warnings
 
 
-def _format_float(value: Optional[float], digits: int = 4) -> str:
-    if value is None:
-        return ""
-    return f"{value:.{digits}f}".rstrip("0").rstrip(".")
+def _nearest_lookup(map_: Dict[float, float], hour: float, default: float = 0.0) -> float:
+    if not map_:
+        return default
+    keys = list(map_.keys())
+    nearest = min(keys, key=lambda k: abs(k - hour))
+    return float(map_.get(nearest, default))
 
 
-def _clamp_power(
-    desired: float,
-    soc: float,
-    stats: DecisionStats,
-) -> float:
-    if desired > 0:
-        desired = min(desired, stats.discharge_max)
-        desired = min(desired, max(0.0, soc - stats.soc_min))
+def _format_num(x: float, digits: int = 6) -> str:
+    return f"{x:.{digits}f}".rstrip("0").rstrip(".")
+
+
+def _dp_optimize_storage(
+    *,
+    load_kw: List[float],
+    pv_kw: List[float],
+    price: List[float],
+    dt_h: float,
+    soc_min_kwh: float,
+    soc_max_kwh: float,
+    soc0_kwh: float,
+    socT_kwh: float,
+    p_max_kw: float,
+    power_step_kw: float = 1.0,
+) -> Tuple[List[float], List[float], List[float]]:
+    """
+    Minimize total grid cost: sum(grid_kW * price * dt_h)
+    where grid_kW = (load - pv) - p_batt (p_batt>0 discharge).
+    """
+    steps = min(len(load_kw), len(pv_kw), len(price))
+    if steps <= 0:
+        return [], [], []
+
+    soc_step = dt_h * power_step_kw
+    if soc_step <= 0:
+        raise ValueError("invalid soc step")
+
+    def to_idx(soc: float) -> int:
+        return int(round((soc - soc_min_kwh) / soc_step))
+
+    n_states = int(round((soc_max_kwh - soc_min_kwh) / soc_step)) + 1
+    if n_states <= 1:
+        raise ValueError("invalid soc bounds")
+
+    # DP over SOC states: cost[t][i] = min cost up to time t with SOC index i
+    inf = 1e30
+    cost = [inf] * n_states
+    prev_idx: List[List[int]] = [[-1] * n_states for _ in range(steps)]
+    prev_p: List[List[float]] = [[0.0] * n_states for _ in range(steps)]
+
+    i0 = max(0, min(n_states - 1, to_idx(soc0_kwh)))
+    cost[i0] = 0.0
+
+    for t in range(steps):
+        next_cost = [inf] * n_states
+        net = float(load_kw[t]) - float(pv_kw[t])
+        pr = float(price[t])
+
+        for i in range(n_states):
+            base = cost[i]
+            if base >= inf / 2:
+                continue
+            soc = soc_min_kwh + i * soc_step
+
+            # Feasible power bounds from SOC + power limit
+            p_min = max(-p_max_kw, -(soc_max_kwh - soc) / dt_h)
+            p_max = min(p_max_kw, (soc - soc_min_kwh) / dt_h)
+
+            p = math.ceil(p_min / power_step_kw) * power_step_kw
+            while p <= p_max + 1e-9:
+                soc_next = soc - p * dt_h
+                j = int(round((soc_next - soc_min_kwh) / soc_step))
+                if 0 <= j < n_states:
+                    grid = net - p
+                    step_cost = grid * pr * dt_h
+                    cand = base + step_cost
+                    if cand < next_cost[j]:
+                        next_cost[j] = cand
+                        prev_idx[t][j] = i
+                        prev_p[t][j] = float(p)
+                p += power_step_kw
+
+        cost = next_cost
+
+    iT = max(0, min(n_states - 1, to_idx(socT_kwh)))
+    if cost[iT] >= inf / 2:
+        # If exact terminal SOC isn't reachable due to discretization, pick nearest.
+        best_i = min(range(n_states), key=lambda i: cost[i])
     else:
-        desired = max(desired, -stats.charge_max)
-        desired = max(desired, -(stats.soc_max - soc))
-    return desired
+        best_i = iT
+
+    # Backtrack
+    p_schedule: List[float] = [0.0] * steps
+    soc_schedule: List[float] = [0.0] * steps
+    grid_schedule: List[float] = [0.0] * steps
+
+    j = best_i
+    soc = soc_min_kwh + j * soc_step
+    for t in range(steps - 1, -1, -1):
+        i = prev_idx[t][j]
+        p = prev_p[t][j]
+        if i < 0:
+            i = j
+            p = 0.0
+        soc_prev = soc_min_kwh + i * soc_step
+        # Forwards definition: soc_next = soc_prev - p*dt
+        p_schedule[t] = float(p)
+        soc_schedule[t] = float(soc_prev - p * dt_h)
+        grid_schedule[t] = (float(load_kw[t]) - float(pv_kw[t])) - float(p)
+        j = i
+        soc = soc_prev
+
+    return p_schedule, soc_schedule, grid_schedule
 
 
-def _build_decision_rows(
-    forecast_rows: List[Dict[str, object]],
-    stats: DecisionStats,
-    horizon_hours: int,
-) -> List[Dict[str, object]]:
-    rows: List[Dict[str, object]] = []
-    soc = min(max(stats.soc_initial, stats.soc_min), stats.soc_max)
-    target_soc = soc
-
-    total_steps = min(horizon_hours, len(forecast_rows))
-    for idx in range(total_steps):
-        item = forecast_rows[idx]
-        load_value = float(item["Load_Forecast"])
-        wind_value = float(item["Wind_Forecast"])
-        pv_value = float(item["PV_Forecast"])
-        net_load = load_value - wind_value - pv_value
-
-        remaining = max(1, total_steps - idx)
-        base_power = net_load - stats.net_target
-        soc_bias = -(target_soc - soc) / remaining
-        desired = base_power + soc_bias
-        power = _clamp_power(desired, soc, stats)
-        soc = soc - power
-
-        if power > 0.001:
-            action = "discharge"
-        elif power < -0.001:
-            action = "charge"
-        else:
-            action = "idle"
-
-        rows.append(
-            {
-                "Datetime": item["Datetime"],
-                "Load_Forecast": load_value,
-                "Wind_Forecast": wind_value,
-                "PV_Forecast": pv_value,
-                "Net_Load": net_load,
-                "ES_MW_Decision": power,
-                "ES_SOC_Decision": soc,
-                "Action": action,
-            }
-        )
-
-    return rows
-
-
-def _build_csv(rows: List[Dict[str, object]]) -> str:
-    headers = [
-        "Datetime",
-        "Load_Forecast",
-        "Wind_Forecast",
-        "PV_Forecast",
-        "Net_Load",
-        "ES_MW_Decision",
-        "ES_SOC_Decision",
-        "Action",
-    ]
-    lines = [",".join(headers)]
-    for row in rows:
-        dt = row["Datetime"]
-        if isinstance(dt, datetime):
-            dt_text = dt.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            dt_text = str(dt)
-        lines.append(
-            ",".join(
-                [
-                    dt_text,
-                    _format_float(row.get("Load_Forecast")),
-                    _format_float(row.get("Wind_Forecast")),
-                    _format_float(row.get("PV_Forecast")),
-                    _format_float(row.get("Net_Load")),
-                    _format_float(row.get("ES_MW_Decision")),
-                    _format_float(row.get("ES_SOC_Decision")),
-                    str(row.get("Action", "")),
-                ]
-            )
-        )
-    return "\n".join(lines)
-
-
-def build_decision_csvs(
+def build_market_decision_12h(
+    *,
     data_dir: str,
-    horizons: Optional[Iterable[int]] = None,
-    history_file: str = "VPP一年优化数据.csv",
-    load_forecast: str = "output/Load_forecast_24h.csv",
-    wind_forecast: str = "output/Wind_forecast_24h.csv",
-    pv_forecast: str = "output/PV_forecast_24h.csv",
-    output_prefix: str = "output/ES_decision",
+    history_file: str = "虚拟电厂_24h15min_数据.csv",
+    load_forecast_file: str = "output/Load_forecast_12h.csv",
+    pv_forecast_file: str = "output/PV_forecast_12h.csv",
+    output_file: str = "output/Market_decision_12h.csv",
+    horizon_hours: float = 12.0,
+    step_minutes: int = 15,
+    window_hours: float = 24.0,
+    capacity_kwh: float = 200.0,
+    soc_initial_kwh: Optional[float] = None,
+    soc_final_kwh: Optional[float] = None,
+    p_max_kw: float = 100.0,
 ) -> DecisionOutput:
-    horizons = list(horizons or DEFAULT_HORIZONS)
-    if not horizons:
-        return DecisionOutput(ok=False, message="horizons 不能为空")
+    warnings: List[str] = []
+    if step_minutes <= 0 or 60 % step_minutes != 0:
+        return DecisionOutput(ok=False, message="step_minutes 必须能整除 60（例如 15）")
+    if horizon_hours <= 0:
+        return DecisionOutput(ok=False, message="horizon_hours 必须 > 0")
+    if capacity_kwh <= 0:
+        return DecisionOutput(ok=False, message="capacity_kwh 必须 > 0")
+    if p_max_kw <= 0:
+        return DecisionOutput(ok=False, message="p_max_kw 必须 > 0")
+
+    dt_h = step_minutes / 60.0
+    steps = int(round(horizon_hours / dt_h))
+    window_rows = int(round(window_hours / dt_h))
 
     history_path = os.path.join(data_dir, history_file)
     if not os.path.exists(history_path):
         return DecisionOutput(ok=False, message=f"历史数据不存在: {history_file}")
 
+    load_path = os.path.join(data_dir, load_forecast_file)
+    pv_path = os.path.join(data_dir, pv_forecast_file)
+    if not os.path.exists(load_path):
+        return DecisionOutput(ok=False, message=f"负荷预测不存在: {load_forecast_file}")
+    if not os.path.exists(pv_path):
+        return DecisionOutput(ok=False, message=f"光伏预测不存在: {pv_forecast_file}")
+
     try:
-        history_rows = _load_csv_rows(history_path)
+        history_rows_all = _read_csv_rows(history_path)
+        history_rows = history_rows_all[-window_rows:] if len(history_rows_all) > window_rows else history_rows_all
     except OSError as exc:
         return DecisionOutput(ok=False, message=f"历史数据读取失败: {exc}")
 
     if not history_rows:
         return DecisionOutput(ok=False, message="历史数据为空")
 
-    stats, warnings = _compute_history_stats(history_rows)
+    price_map, price_warnings = _build_time_of_day_price_map(history_rows)
+    warnings.extend(price_warnings)
 
-    load_path = os.path.join(data_dir, load_forecast)
-    wind_path = os.path.join(data_dir, wind_forecast)
-    pv_path = os.path.join(data_dir, pv_forecast)
-    forecast_rows, forecast_warnings = _build_forecast_rows(load_path, wind_path, pv_path)
-    warnings.extend(forecast_warnings)
+    # Determine last hour from history (time axis base)
+    last = history_rows[-1]
+    last_hour = _safe_float(last.get("时间_小时"))
+    if last_hour is None:
+        period = _safe_float(last.get("时间_时段"))
+        if period is not None:
+            last_hour = (period - 1.0) * 0.25
+    if last_hour is None:
+        return DecisionOutput(ok=False, message="无法从历史数据解析最后时间点（时间_小时/时间_时段）")
 
-    if not forecast_rows:
-        return DecisionOutput(ok=False, message="预测数据为空或无法解析", warnings=warnings, stats=stats)
+    # Forecast series
+    load_rows = _read_csv_rows(load_path)
+    pv_rows = _read_csv_rows(pv_path)
+    if not load_rows or not pv_rows:
+        return DecisionOutput(ok=False, message="预测文件为空")
 
-    outputs: Dict[str, str] = {}
-    for horizon in horizons:
-        if horizon <= 0:
-            warnings.append(f"忽略非法时段 {horizon}h")
-            continue
-        rows = _build_decision_rows(forecast_rows, stats, horizon)
-        filename = f"{output_prefix}_{horizon}h_agent.csv"
-        outputs[filename] = _build_csv(rows)
+    aligned = min(steps, len(load_rows), len(pv_rows))
+    if aligned <= 0:
+        return DecisionOutput(ok=False, message="预测长度不足")
 
-    if not outputs:
-        return DecisionOutput(ok=False, message="未生成任何决策结果", warnings=warnings, stats=stats)
+    dts: List[str] = []
+    load_kw: List[float] = []
+    pv_kw: List[float] = []
+    price: List[float] = []
 
-    return DecisionOutput(ok=True, message="ok", outputs=outputs, warnings=warnings, stats=stats)
+    for i in range(aligned):
+        dt_text = str(load_rows[i].get("Datetime", "")).strip()
+        if not dt_text:
+            dt_text = str(pv_rows[i].get("Datetime", "")).strip()
+        dts.append(dt_text)
 
+        lv = _safe_float(load_rows[i].get("Load_Forecast"))
+        pv = _safe_float(pv_rows[i].get("PV_Forecast"))
+        load_kw.append(float(lv or 0.0))
+        pv_kw.append(float(pv or 0.0))
 
-def write_decision_csvs(
-    data_dir: str,
-    horizons: Optional[Iterable[int]] = None,
-    history_file: str = "VPP一年优化数据.csv",
-    load_forecast: str = "output/Load_forecast_24h.csv",
-    wind_forecast: str = "output/Wind_forecast_24h.csv",
-    pv_forecast: str = "output/PV_forecast_24h.csv",
-    output_prefix: str = "output/ES_decision",
-) -> DecisionOutput:
-    result = build_decision_csvs(
-        data_dir=data_dir,
-        horizons=horizons,
-        history_file=history_file,
-        load_forecast=load_forecast,
-        wind_forecast=wind_forecast,
-        pv_forecast=pv_forecast,
-        output_prefix=output_prefix,
+        h = _parse_hour(dt_text)
+        if h is None:
+            # fallback: use last_hour + step
+            h = float(last_hour) + dt_h * (i + 1)
+        tod = float(h) % 24.0
+        price.append(_nearest_lookup(price_map, tod, default=0.0))
+
+    soc0 = float(soc_initial_kwh) if soc_initial_kwh is not None else capacity_kwh * 0.5
+    socT = float(soc_final_kwh) if soc_final_kwh is not None else soc0
+    soc0 = min(max(soc0, 0.0), capacity_kwh)
+    socT = min(max(socT, 0.0), capacity_kwh)
+
+    p_schedule, soc_schedule, grid_schedule = _dp_optimize_storage(
+        load_kw=load_kw,
+        pv_kw=pv_kw,
+        price=price,
+        dt_h=dt_h,
+        soc_min_kwh=0.0,
+        soc_max_kwh=capacity_kwh,
+        soc0_kwh=soc0,
+        socT_kwh=socT,
+        p_max_kw=p_max_kw,
+        power_step_kw=1.0,
     )
+
+    # Build CSV
+    headers = [
+        "Datetime",
+        "Load_Forecast_kW",
+        "PV_Forecast_kW",
+        "Price_yuan_per_kWh",
+        "Net_Load_kW",
+        "Battery_Power_kW",
+        "SOC_kWh",
+        "Grid_Power_kW",
+        "Grid_Cost_yuan",
+    ]
+    lines = [",".join(headers)]
+    for i in range(aligned):
+        net = load_kw[i] - pv_kw[i]
+        p = p_schedule[i]
+        soc = soc_schedule[i]
+        grid = grid_schedule[i]
+        cost = grid * price[i] * dt_h
+        lines.append(
+            ",".join(
+                [
+                    dts[i],
+                    _format_num(load_kw[i], 4),
+                    _format_num(pv_kw[i], 4),
+                    _format_num(price[i], 6),
+                    _format_num(net, 4),
+                    _format_num(p, 4),
+                    _format_num(soc, 4),
+                    _format_num(grid, 4),
+                    _format_num(cost, 6),
+                ]
+            )
+        )
+    csv_text = "\n".join(lines)
+
+    stats = DecisionStats(
+        horizon_hours=horizon_hours,
+        step_minutes=step_minutes,
+        steps=aligned,
+        window_hours=window_hours,
+        window_rows=len(history_rows),
+        capacity_kwh=capacity_kwh,
+        soc_initial_kwh=soc0,
+        soc_final_kwh=socT,
+        p_max_kw=p_max_kw,
+        objective="minimize grid cost (buy positive / sell negative) at market price",
+    )
+    return DecisionOutput(ok=True, message="ok", filename=output_file, csv_text=csv_text, warnings=warnings, stats=stats)
+
+
+def write_market_decision_12h(**kwargs) -> DecisionOutput:
+    data_dir = kwargs.get("data_dir")
+    if not data_dir:
+        return DecisionOutput(ok=False, message="data_dir is required")
+    result = build_market_decision_12h(**kwargs)
     if not result.ok:
         return result
-
-    saved_outputs: Dict[str, str] = {}
-    warnings = list(result.warnings)
-    for rel_path, content in result.outputs.items():
-        write_result = write_agent_csv(rel_path, content, data_dir)
-        if write_result.ok:
-            saved_outputs[write_result.filename] = content
-        else:
-            warnings.append(f"{rel_path} 写入失败: {write_result.message}")
-
-    return DecisionOutput(
-        ok=bool(saved_outputs),
-        message="ok" if saved_outputs else "写入失败",
-        outputs=saved_outputs,
-        warnings=warnings,
-        stats=result.stats,
-    )
-
-
-if __name__ == "__main__":
-    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
-    result = write_decision_csvs(data_dir)
-    if not result.ok:
-        raise SystemExit(result.message)
-    print("生成决策文件:", ", ".join(result.outputs.keys()))
+    wr = write_data_csv(result.filename, result.csv_text, data_dir)
+    if not wr.ok:
+        return DecisionOutput(ok=False, message=wr.message, warnings=result.warnings, stats=result.stats)
+    result.filename = wr.filename
+    return result

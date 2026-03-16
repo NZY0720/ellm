@@ -48,7 +48,53 @@ def write_agent_csv(rel_path: str, content: str, data_dir: str) -> AgentFileResu
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
     try:
-        with open(target, "w", encoding="utf-8") as f:
+        # Use UTF-8 with BOM for better compatibility (e.g., Excel + Chinese headers).
+        with open(target, "w", encoding="utf-8-sig") as f:
+            f.write(content)
+    except OSError as exc:
+        return AgentFileResult(ok=False, message=f"write failed: {exc}")
+
+    return AgentFileResult(ok=True, message="ok", filename=normalized, path=target)
+
+
+def write_data_csv(rel_path: str, content: str, data_dir: str) -> AgentFileResult:
+    """
+    Write a CSV under data/ (typically data/output/*.csv).
+    This is intentionally stricter than a generic file writer: it only allows writing
+    forecast outputs under data/output/ to avoid accidental overwrites.
+    """
+    if not rel_path or not content:
+        return AgentFileResult(ok=False, message="filename/content is required")
+    if not data_dir:
+        return AgentFileResult(ok=False, message="data_dir is required")
+
+    normalized = rel_path.replace("\\", "/").strip()
+    if normalized.startswith("/") or re.match(r"^[a-zA-Z]:", normalized):
+        return AgentFileResult(ok=False, message="absolute path is not allowed")
+    if ".." in normalized:
+        return AgentFileResult(ok=False, message="invalid path")
+    if normalized.lower().startswith("data/"):
+        normalized = normalized[5:]
+        if not normalized:
+            return AgentFileResult(ok=False, message="invalid path")
+    if not normalized.lower().endswith(".csv"):
+        return AgentFileResult(ok=False, message="only .csv is allowed")
+
+    # Only allow writing to output/ to keep the surface area small.
+    if not normalized.lower().startswith("output/"):
+        return AgentFileResult(ok=False, message="only output/*.csv is allowed")
+
+    data_dir_abs = os.path.abspath(data_dir)
+    if not os.path.isdir(data_dir_abs):
+        return AgentFileResult(ok=False, message="data directory does not exist")
+
+    target = os.path.abspath(os.path.join(data_dir_abs, normalized))
+    if os.path.commonpath([data_dir_abs, target]) != data_dir_abs:
+        return AgentFileResult(ok=False, message="invalid target path")
+
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    try:
+        with open(target, "w", encoding="utf-8-sig") as f:
             f.write(content)
     except OSError as exc:
         return AgentFileResult(ok=False, message=f"write failed: {exc}")
